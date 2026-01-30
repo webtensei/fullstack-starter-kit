@@ -1,0 +1,184 @@
+---
+description: NestJS backend architecture and best practices
+globs: apps/api/**
+alwaysApply: false
+---
+
+# Backend NestJS Architecture Rules
+
+## Architecture Overview
+
+This project uses **NestJS** with **Prisma** for database access. Follow modular architecture principles.
+
+## Observability (SigNoz)
+
+This repo includes optional **SigNoz** + **OpenTelemetry** instrumentation for the API.
+
+- **Keep observability centralized**: configure OTel + request logging only in `apps/api/src/observability/**` and call it from `main.ts`.
+- **Never hardcode behavior**: use env toggles instead (see `.env.example`).
+
+### Environment variables (high signal)
+
+- **Disable all telemetry network traffic**:
+  - `OTEL_ENABLED=false`
+- **Environment label for filtering in SigNoz**:
+  - `DEPLOYMENT_ENV=development|staging|production`
+- **Trace sampling** (0..1):
+  - `OTEL_TRACE_SAMPLE_RATE`
+- **Request log export to SigNoz** (OTLP logs):
+  - `OTEL_LOGS_ENABLED`
+  - `OTEL_LOGS_MIN_STATUS` (e.g. 400)
+  - `OTEL_LOGS_SAMPLE_RATE` (0..1)
+
+### Logging rules (security + DX)
+
+- **Redact secrets**: never log `password`, tokens, `Authorization`, `Cookie`, refresh tokens, etc.
+- **Prefer structured logs** (JSON) with stable keys (requestId, traceId, spanId, method, url, status, duration).
+- **Avoid noisy payload logging by default**. If needed, make it opt-in with env flags.
+
+### Tracing rules
+
+- Prefer automatic instrumentation (HTTP/Express, Prisma).
+- When adding manual spans:
+  - keep attributes low-cardinality (avoid putting `userId` into labels/attributes at high volume)
+  - add business-friendly attributes (feature/module names) rather than raw payloads
+
+## Project Structure
+
+```
+apps/api/src/
+├── modules/          # Domain modules (users, products, etc.)
+├── common/           # Shared utilities, guards, interceptors, Prisma
+├── config/           # Configuration modules
+└── main.ts           # Application entry point
+```
+
+## Module Organization
+
+Each domain module should follow this structure:
+
+```
+modules/{domain}/
+├── {domain}.module.ts    # Module definition
+├── {domain}.controller.ts # REST endpoints
+├── {domain}.service.ts   # Business logic
+├── dto/                   # Data Transfer Objects
+│   ├── create-{domain}.dto.ts
+│   └── update-{domain}.dto.ts
+└── entities/              # Prisma-based entities (if needed)
+```
+
+## Shared Types
+
+**CRITICAL**: All types shared with frontend MUST be imported from `@shared`:
+
+```typescript
+// ✅ CORRECT
+import { User, CreateUserDto, UpdateUserDto } from '@shared';
+
+// ❌ WRONG - don't duplicate types
+// Don't create DTOs that duplicate @shared types
+```
+
+If you need backend-specific types, create them in the module, but prefer using `@shared` types.
+
+## Prisma Usage
+
+- Use `PrismaService` from `common/prisma/prisma.service`
+- Inject `PrismaService` in services, not controllers
+- Keep database queries in services
+- Use transactions for multi-step operations
+ - Prefer Prisma + OTel instrumentation for DB visibility (no manual query logging in code)
+
+```typescript
+// ✅ CORRECT
+@Injectable()
+export class UserService {
+  constructor(private prisma: PrismaService) {}
+
+  async create(data: CreateUserDto) {
+    return this.prisma.user.create({ data });
+  }
+}
+
+// ❌ WRONG - don't use Prisma directly in controllers
+@Controller('users')
+export class UserController {
+  constructor(private prisma: PrismaService) {} // ❌
+}
+```
+
+## DTOs and Validation
+
+- Use class-validator decorators for DTO validation
+- Extend `@shared` types when possible
+- Create separate DTOs only when backend needs additional fields
+
+```typescript
+import { CreateUserDto as SharedCreateUserDto } from '@shared';
+import { IsString, IsEmail, IsOptional } from 'class-validator';
+
+export class CreateUserDto extends SharedCreateUserDto {
+  @IsEmail()
+  email: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
+```
+
+## Error Handling
+
+- Use NestJS built-in exception filters
+- Return consistent error responses
+- Use HTTP status codes appropriately
+- Log errors for debugging
+
+```typescript
+// ✅ CORRECT
+throw new NotFoundException('User not found');
+throw new BadRequestException('Invalid email format');
+```
+
+## API Design
+
+- Use RESTful conventions
+- Version APIs if needed (`/api/v1/users`)
+- Return consistent response format
+- Use DTOs for request/response
+
+```typescript
+@Get(':id')
+async findOne(@Param('id') id: string): Promise<ApiResponse<User>> {
+  const user = await this.userService.findOne(id);
+  return { data: user, success: true };
+}
+```
+
+## Dependency Injection
+
+- Use constructor injection
+- Keep services focused and single-responsibility
+- Use modules to organize dependencies
+
+## Code Style
+
+- Use TypeScript strictly - avoid `any`
+- Follow NestJS naming conventions
+- Use async/await, not promises
+- Keep functions small and focused
+- Add JSDoc comments for public APIs
+
+## Environment Variables
+
+- Use `@nestjs/config` for configuration
+- Store sensitive data in `.env` (not committed)
+- Validate environment variables on startup
+
+## Testing
+
+- Write unit tests for services
+- Write integration tests for controllers
+- Mock Prisma in unit tests
+- Use test databases for integration tests

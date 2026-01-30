@@ -1,0 +1,118 @@
+---
+description: Feature-Sliced Design architecture rules for React frontend
+globs: apps/web/**
+alwaysApply: false
+---
+
+# Frontend FSD Architecture Rules
+
+## Architecture Overview
+
+This project uses **Feature-Sliced Design (FSD)** methodology. Follow these rules strictly:
+
+## Layer Structure
+
+The project follows FSD layers (from top to bottom):
+1. **app** - Application initialization, routing, providers
+2. **pages** - Full pages or large page sections
+3. **widgets** - Large self-contained UI blocks
+4. **features** - Reusable feature implementations
+5. **entities** - Business entities (User, Product, etc.)
+6. **shared** - Reusable code (UI components, utilities, API)
+
+## Import Rules
+
+### Critical: Import Direction
+- Modules can ONLY import from layers BELOW them
+- Same-layer imports are FORBIDDEN (except within the same slice)
+- Pages can import from: widgets, features, entities, shared
+- Widgets can import from: features, entities, shared
+- Features can import from: entities, shared
+- Entities can import from: shared only
+- Shared cannot import from any other layer
+
+### Example - CORRECT:
+```typescript
+// ✅ pages/home can import from widgets
+import { Header } from '@/widgets/header';
+
+// ✅ features/auth can import from entities
+import { User } from '@/entities/user';
+
+// ✅ entities/user can import from shared
+import { Button } from '@/shared/ui';
+```
+
+### Example - WRONG:
+```typescript
+// ❌ entities/user cannot import from features
+import { useAuth } from '@/features/auth';
+
+// ❌ shared cannot import from entities
+import { User } from '@/entities/user';
+
+// ❌ pages cannot import from other pages
+import { HomePage } from '@/pages/home';
+```
+
+## Slice Structure
+
+Each slice (except app/shared) must have:
+- `ui/` - UI components
+- `api/` - API calls, types
+- `model/` - Business logic, stores, schemas
+- `lib/` - Internal utilities (optional)
+- `index.ts` - Public API (exports only what other layers need)
+
+## Public API Pattern
+
+Always use `index.ts` files to export public API:
+
+```typescript
+// ✅ GOOD - entities/user/index.ts
+export { UserCard } from './ui/user-card';
+export { useUser } from './model/use-user';
+export type { User } from './model/types';
+
+// ❌ BAD - direct imports bypassing index
+import { UserCard } from '@/entities/user/ui/user-card';
+```
+
+## Shared Types
+
+**IMPORTANT**: All types shared between frontend and backend MUST be in `@shared`:
+
+```typescript
+// ✅ CORRECT
+import { User, CreateUserDto } from '@shared';
+
+// ❌ WRONG - don't duplicate types
+// Don't create types in entities/user that exist in @shared
+```
+
+## Path Aliases
+
+- `@/` - Points to `apps/web/src/`
+- `@shared/` - Points to `libs/shared/src/`
+
+## Component Guidelines
+
+- Use functional components with hooks
+- Keep components small and focused
+- Extract reusable logic to hooks
+- Colocate styles with components when possible
+- Use TypeScript strictly - avoid `any`
+
+## State Management
+
+- Prefer local state (`useState`) for component-specific state
+- Use context for shared state within a feature/widget
+- Consider external state management (Zustand, Jotai) for global state
+- Keep business logic in `model/` segments
+
+## Code Organization
+
+- One component per file
+- Group related files in folders
+- Use descriptive names that reflect business domain
+- Avoid technical names (e.g., `Component1`, `utils2`)

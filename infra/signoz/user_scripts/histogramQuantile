@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""
+Minimal executable function for ClickHouse used by SigNoz.
+
+Input format: CSV with 3 columns:
+  1) buckets: Array(Float64)
+  2) counts:  Array(Float64)
+  3) quantile: Float64
+
+The exact CSV encoding of arrays can differ between ClickHouse versions.
+This implementation is defensive: it extracts floats from the array strings.
+If parsing fails, it returns 0.
+"""
+
+import sys
+import re
+import math
+import csv
+
+
+def parse_floats(s: str):
+    return [float(x) for x in re.findall(r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?", s)]
+
+
+def histogram_quantile(buckets, counts, q):
+    if not buckets or not counts:
+        return 0.0
+    if len(buckets) != len(counts):
+        n = min(len(buckets), len(counts))
+        buckets = buckets[:n]
+        counts = counts[:n]
+
+    total = sum(counts)
+    if total <= 0:
+        return 0.0
+
+    q = max(0.0, min(1.0, q))
+    target = total * q
+
+    cum = 0.0
+    prev_bucket = buckets[0]
+    prev_cum = 0.0
+    for bucket, c in zip(buckets, counts):
+        cum += c
+        if cum >= target:
+            # linear interpolation within bucket range if possible
+            if bucket == prev_bucket:
+                return float(bucket)
+            span = cum - prev_cum
+            if span <= 0:
+                return float(bucket)
+            frac = (target - prev_cum) / span
+            return float(prev_bucket + (bucket - prev_bucket) * frac)
+        prev_bucket = bucket
+        prev_cum = cum
+
+    return float(buckets[-1])
+
+
+def main():
+    data = sys.stdin.read()
+    if not data.strip():
+        sys.stdout.write("0\n")
+        return
+
+    reader = csv.reader(data.splitlines())
+    try:
+        row = next(reader)
+    except StopIteration:
+        sys.stdout.write("0\n")
+        return
+
+    # Some ClickHouse versions may wrap the entire row as a single CSV field.
+    if len(row) < 3:
+        # try splitting by tab/comma heuristics
+        parts = re.split(r"\t|,(?=\[)", data.strip(), maxsplit=2)
+        if len(parts) >= 3:
+            row = [parts[0], parts[1], parts[2]]
+
+    try:
+        buckets = parse_floats(row[0])
+        counts = parse_floats(row[1])
+        q = float(parse_floats(row[2])[0] if row[2] else 0.0)
+        out = histogram_quantile(buckets, counts, q)
+        if math.isnan(out) or math.isinf(out):
+            out = 0.0
+        sys.stdout.write(f"{out}\n")
+    except Exception:
+        sys.stdout.write("0\n")
+
+
+if __name__ == "__main__":
+    main()
+

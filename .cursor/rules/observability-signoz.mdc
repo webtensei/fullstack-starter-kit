@@ -1,0 +1,67 @@
+---
+description: Observability rules (SigNoz + OpenTelemetry) for this repo
+globs:
+  - apps/api/**
+  - infra/signoz/**
+  - .env*
+alwaysApply: false
+---
+
+# Observability (SigNoz + OpenTelemetry)
+
+This repo includes **self-hosted SigNoz** and an **OpenTelemetry** integration for `apps/api`.
+
+## Where things live
+
+- **SigNoz stack (docker-compose)**: `infra/signoz/`
+  - Start/stop scripts are in `package.json`:
+    - `yarn obs:up`
+    - `yarn obs:down`
+    - `yarn obs:ps`
+    - `yarn obs:logs`
+  - SigNoz UI: `http://localhost:3301`
+  - OTLP ingest (collector): `http://localhost:4318` and `grpc://localhost:4317`
+
+- **API instrumentation entrypoint**: `apps/api/src/observability/`
+  - `otel.ts`: OpenTelemetry SDK (traces + optional OTLP logs exporter)
+  - `request-logger.ts`: request logging middleware (stdout + optional export to SigNoz)
+  - `index.ts`: tiny wrapper used by `apps/api/src/main.ts`
+
+## DX rule: keep observability centralized
+
+- Do **NOT** sprinkle ad-hoc exporter setup across modules.
+- All observability wiring should stay in `apps/api/src/observability/**` and be called from `main.ts`.
+
+## Environment controls (do not hardcode)
+
+Prefer environment variables for behavior changes:
+
+- **Master switch (no network calls when false)**:
+  - `OTEL_ENABLED=false`
+
+- **Environment label shown in SigNoz**:
+  - `DEPLOYMENT_ENV=development|staging|production`
+
+- **Trace sampling**:
+  - `OTEL_TRACE_SAMPLE_RATE` (0..1)
+
+- **Request logs export to SigNoz** (OTLP logs):
+  - `OTEL_LOGS_ENABLED=true|false`
+  - `OTEL_LOGS_MIN_STATUS` (e.g. 400)
+  - `OTEL_LOGS_SAMPLE_RATE` (0..1)
+
+- **Stdout request logs (pino)**:
+  - `LOG_LEVEL`
+  - `LOG_HTTP_MIN_STATUS`
+  - `LOG_HTTP_SAMPLE_RATE`
+
+Keep defaults conservative for templates:
+- traces can be enabled with sampling
+- request log export should be opt-in (`OTEL_LOGS_ENABLED=false` in `.env.example`)
+
+## Security rules
+
+- Never log secrets:
+  - passwords, tokens, cookies, authorization headers, refresh tokens
+- If you add new request/response logging, ensure redaction/sanitization stays in place.
+

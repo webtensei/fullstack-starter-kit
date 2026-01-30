@@ -1,0 +1,53 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum Provider {
+  GOOGLE
+  YANDEX
+}
+
+model User {
+  id            String     @id @default(uuid())
+  username      String     @unique
+  password      String
+  is_activated  Boolean    @default(false)
+  is_blocked    Boolean    @default(false)
+  roles         Role[]     @default([USER])
+  name          String?
+  surname       String?
+  patronymic    String?
+  phone         String?    @unique
+  creation_date DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
+
+  tokens Token[]
+
+  @@map("users")
+}
+
+model Token {
+  id           String   @id @default(uuid())
+  token        String   @unique
+  expires_at   DateTime
+  creation_date DateTime @default(now())
+  user_id      String
+  user_agent   String
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("tokens")
+}

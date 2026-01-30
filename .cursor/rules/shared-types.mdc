@@ -1,0 +1,166 @@
+---
+description: Shared types library rules and conventions
+globs: libs/shared/**
+alwaysApply: false
+---
+
+# Shared Types Library Rules
+
+## Purpose
+
+The `@shared` library contains **all types, interfaces, and DTOs** that are used by both frontend and backend. This ensures type safety across the entire stack.
+
+## Critical Rules
+
+### 1. Single Source of Truth
+- **ALL** types shared between frontend and backend MUST be in `libs/shared/src/`
+- **NEVER** duplicate types in frontend (`apps/web`) or backend (`apps/api`)
+- If a type is used in both places, it belongs in `@shared`
+
+### 2. Import Convention
+```typescript
+// ✅ CORRECT - Frontend
+import { User, CreateUserDto } from '@shared';
+
+// ✅ CORRECT - Backend
+import { User, CreateUserDto } from '@shared';
+
+// ❌ WRONG - Don't create duplicate types
+// In apps/api/src/modules/users/dto/create-user.dto.ts
+export interface CreateUserDto { ... } // ❌ Should be in @shared
+```
+
+### 3. Type Organization
+
+Organize types by domain or feature:
+
+```typescript
+// libs/shared/src/index.ts
+export interface User { ... }
+export interface CreateUserDto { ... }
+export interface UpdateUserDto { ... }
+
+export interface Product { ... }
+export interface CreateProductDto { ... }
+```
+
+For larger projects, consider splitting into files:
+```
+libs/shared/src/
+├── user.types.ts
+├── product.types.ts
+├── api.types.ts
+└── index.ts (re-exports all)
+```
+
+### 4. What Goes in @shared
+
+✅ **DO include:**
+- Entity types (User, Product, Order, etc.)
+- DTOs (CreateUserDto, UpdateUserDto)
+- API response types (ApiResponse<T>, ApiError)
+- Enums used in both frontend and backend
+- Common utility types
+
+❌ **DON'T include:**
+- Frontend-specific types (React component props, hooks)
+- Backend-specific types (Prisma-specific types, internal service types)
+- Implementation details
+
+### 5. Type Definitions
+
+- Use `interface` for object shapes
+- Use `type` for unions, intersections, computed types
+- Export everything that needs to be shared
+- Keep types focused and minimal
+
+```typescript
+// ✅ GOOD
+export interface User {
+  id: string;
+  email: string;
+  name: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateUserDto {
+  email: string;
+  name?: string;
+}
+
+// ❌ BAD - Too specific, includes implementation details
+export interface UserWithPasswordHash extends User {
+  passwordHash: string; // ❌ Backend-only, shouldn't be shared
+}
+```
+
+### 6. Versioning and Changes
+
+- Be careful when changing shared types - affects both frontend and backend
+- Use optional fields when adding new properties
+- Consider migration strategy for breaking changes
+- Document breaking changes
+
+### 7. Prisma Integration
+
+- Prisma generates types from schema
+- Export Prisma types from `@shared` if needed by frontend
+- Keep Prisma schema in sync with shared types
+
+```typescript
+// If Prisma User type matches shared User, re-export:
+import { User as PrismaUser } from '@prisma/client';
+export type User = PrismaUser; // ✅
+```
+
+### 8. Import Path
+
+Always use the `@shared` alias:
+
+```typescript
+// ✅ CORRECT
+import { User } from '@shared';
+
+// ❌ WRONG
+import { User } from '../../libs/shared/src';
+```
+
+## Best Practices
+
+- Keep shared types simple and focused
+- Avoid circular dependencies
+- Document complex types with JSDoc
+- Use consistent naming conventions
+- Group related types together
+- Export types that are part of public API
+
+## Example Structure
+
+```typescript
+// libs/shared/src/index.ts
+
+// User domain
+export interface User { ... }
+export interface CreateUserDto { ... }
+export interface UpdateUserDto { ... }
+
+// API responses
+export interface ApiResponse<T> {
+  data: T;
+  message?: string;
+  success: boolean;
+}
+
+export interface ApiError {
+  message: string;
+  code?: string;
+  statusCode: number;
+}
+
+// Enums
+export enum UserRole {
+  ADMIN = 'ADMIN',
+  USER = 'USER',
+}
+```
