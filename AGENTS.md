@@ -193,6 +193,9 @@ async findOne(@Param('id') id: string): Promise<ApiResponse<User>> {
 
 ### Scope: `apps/web/**`
 
+### Reference
+- **FSD Documentation**: https://feature-sliced.design/docs
+
 ### Architecture Overview
 
 This project uses **Feature-Sliced Design (FSD)** methodology. Follow these rules strictly:
@@ -207,6 +210,21 @@ The project follows FSD layers (from top to bottom):
 5. **shared** - Reusable code (UI components, utilities, API client)
 
 **IMPORTANT**: `widgets` layer is NOT used in this project.
+
+### Naming Conventions
+
+**CRITICAL**: Use **kebab-case** for ALL files and folders:
+```
+// ✅ CORRECT
+project-card/
+use-get-project.ts
+get-project-participants.ts
+
+// ❌ WRONG
+ProjectCard/
+useGetProject.ts
+getProjectParticipants.ts
+```
 
 ### Import Rules
 
@@ -244,6 +262,34 @@ import { HomePage } from '@/pages/home';
 
 ### Slice Structure
 
+#### entities/api/ (API Instances):
+Central API configuration in `entities/api/index.ts`:
+```typescript
+// entities/api/index.ts
+import axios from "axios";
+import { requestAuthInterceptor } from "./auth-middleware";
+
+const createApi = (baseURL: string) => {
+  const api = axios.create({ baseURL });
+  api.interceptors.request.use(requestAuthInterceptor);
+  return api;
+};
+
+export const userServiceApi = createApi("/user-service");
+export const buildsServiceApi = createApi("/builds-service/api/v1");
+// etc.
+```
+
+Used in other entities:
+```typescript
+// entities/project/remove-participants.ts
+import { buildsServiceApi } from "@entities/api";
+
+export async function removeProjectParticipant(params) {
+  return buildsServiceApi.delete(`/project-participants/${params.id}`);
+}
+```
+
 #### entities/ structure (for API entities):
 ```
 entities/{entity}/
@@ -276,6 +322,18 @@ export class ProjectQueriesTags {
     return [...ProjectQueriesTags.root(), "getAllProjects", params] as const;
   }
 }
+```
+
+#### pages/ structure:
+```
+pages/{page-name}/
+├── index.ts              # Route entry point (export page)
+├── ui/                   # Page UI components
+│   ├── page-name.tsx
+│   ├── page-name.scss
+│   └── index.ts
+└── queries/              # Page-specific queries (optional)
+    └── use-page-data.ts
 ```
 
 #### pages/ vs features/ rule:
@@ -330,7 +388,33 @@ import { User, CreateUserDto } from '@shared';
 - Colocate styles with components when possible
 - Use TypeScript strictly - avoid `any`
 
-### State Management (React Query / TanStack Query)
+#### UI Component Structure:
+Each UI component must be in its own folder with 3 files:
+```
+component-name/
+├── component-name.tsx      # Component implementation
+├── component-name.scss     # Styles (SCSS only!)
+└── index.ts                # Export: export { ComponentName } from "./component-name";
+```
+
+Example:
+```typescript
+// project-card/project-card.tsx
+import "./project-card.scss";
+
+export function ProjectCard() { ... }
+
+// project-card/index.ts
+export { ProjectCard } from "./project-card";
+```
+
+**CRITICAL**: 
+- Use **SCSS only** (`component-name.scss`), never CSS
+- SCSS file must be imported in the component
+- Export through `index.ts` on the same level
+- Component folder and files use kebab-case
+
+### State Management (React Query)
 
 #### Query Hooks Location:
 - **Page-specific queries** → `pages/{page}/queries/`
@@ -383,6 +467,29 @@ export function useGetProjectParticipants(params: GetProjectParticipantsRequest)
 - Group related files in folders
 - Use descriptive names that reflect business domain
 - Avoid technical names (e.g., `Component1`, `utils2`)
+
+### Restricted Areas
+
+**⚠️ DO NOT modify without user approval:**
+
+#### `app/` folder
+- Never commit changes here without explicit user approval
+- Contains application initialization and routing setup
+
+#### `shared/api/` 
+- Do not modify any files inside
+- Entry point `shared/api/index.ts` is especially sensitive
+- Ask user before any changes
+
+#### `shared/ui/`
+- Ask user before creating new UI components
+- Must be maximally reusable, no business logic
+- Used across the entire app
+
+### Shared Folder Purpose
+- **ONLY** for critical app-level utilities without business logic
+- **NO business logic** in shared
+- UI components must be generic and reusable
 
 ---
 
