@@ -201,30 +201,30 @@ This project uses **Feature-Sliced Design (FSD)** methodology. Follow these rule
 
 The project follows FSD layers (from top to bottom):
 1. **app** - Application initialization, routing, providers
-2. **pages** - Full pages or large page sections
-3. **widgets** - Large self-contained UI blocks
-4. **features** - Reusable feature implementations
-5. **entities** - Business entities (User, Product, etc.)
-6. **shared** - Reusable code (UI components, utilities, API)
+2. **pages** - Full pages (maximize code here, page-specific logic)
+3. **features** - Reusable features across multiple pages ONLY
+4. **entities** - Business entities (User, Product, etc.), API calls, query keys
+5. **shared** - Reusable code (UI components, utilities, API client)
+
+**IMPORTANT**: `widgets` layer is NOT used in this project.
 
 ### Import Rules
 
 #### Critical: Import Direction
 - Modules can ONLY import from layers BELOW them
 - Same-layer imports are FORBIDDEN (except within the same slice)
-- Pages can import from: widgets, features, entities, shared
-- Widgets can import from: features, entities, shared
+- Pages can import from: features, entities, shared
 - Features can import from: entities, shared
 - Entities can import from: shared only
 - Shared cannot import from any other layer
 
 #### Example - CORRECT:
 ```typescript
-// ✅ pages/home can import from widgets
-import { Header } from '@/widgets/header';
+// ✅ pages/home can import from features
+import { AuthForm } from '@/features/auth-form';
 
 // ✅ features/auth can import from entities
-import { User } from '@/entities/user';
+import { UserQueriesTags } from '@/entities/user';
 
 // ✅ entities/user can import from shared
 import { Button } from '@/shared/ui';
@@ -244,12 +244,52 @@ import { HomePage } from '@/pages/home';
 
 ### Slice Structure
 
-Each slice (except app/shared) must have:
-- `ui/` - UI components
-- `api/` - API calls, types
-- `model/` - Business logic, stores, schemas
-- `lib/` - Internal utilities (optional)
-- `index.ts` - Public API (exports only what other layers need)
+#### entities/ structure (for API entities):
+```
+entities/{entity}/
+├── api/                    # Raw API functions (fetch/axios)
+│   ├── get-{entity}.ts
+│   ├── update-{entity}.ts
+│   ├── delete-{entity}.ts
+│   └── index.ts
+├── queries/                # React Query hooks (useQuery/useMutation)
+│   ├── use-get-{entity}.ts
+│   ├── use-update-{entity}.ts
+│   └── index.ts
+├── keys.ts                 # Query keys class with static methods
+└── index.ts                # Public API export
+```
+
+#### Keys.ts format:
+```typescript
+// entities/project/keys.ts
+export class ProjectQueriesTags {
+  static root() {
+    return ["project"] as const;
+  }
+
+  static getProject(params: { projectId: string }) {
+    return [...ProjectQueriesTags.root(), params.projectId] as const;
+  }
+
+  static getAllProjects(params: GetProjectsRequest) {
+    return [...ProjectQueriesTags.root(), "getAllProjects", params] as const;
+  }
+}
+```
+
+#### pages/ vs features/ rule:
+- **pages/** - Store code here if used on SINGLE page (maximize this)
+- **features/** - ONLY for code used on MULTIPLE pages (genuinely reusable)
+
+Example:
+```typescript
+// ✅ Page-specific hook → stays in pages/
+// pages/project-details/queries/use-project-stats.ts
+
+// ✅ Reusable across pages → goes to features/
+// features/search-users/queries/use-search-users.ts
+```
 
 ### Public API Pattern
 
@@ -290,12 +330,52 @@ import { User, CreateUserDto } from '@shared';
 - Colocate styles with components when possible
 - Use TypeScript strictly - avoid `any`
 
-### State Management
+### State Management (React Query / TanStack Query)
 
+#### Query Hooks Location:
+- **Page-specific queries** → `pages/{page}/queries/`
+- **Reusable queries** → `entities/{entity}/queries/` or `features/{feature}/queries/`
+
+#### Query Keys Location:
+- **ALWAYS** in `entities/{entity}/keys.ts` as static class methods
+- Use `as const` for type safety
+- Compose keys via spread: `[...Root, "action", params]`
+
+#### Types:
+- All types come from `@shared` (libs/shared)
+- NEVER define API types in entities
+
+#### Example:
+```typescript
+// entities/project/keys.ts
+import { GetProjectParticipantsRequest } from "@shared";
+
+export class ProjectQueriesTags {
+  static root() { return ["project"] as const; }
+  
+  static getProjectParticipants({ projectId, ...params }: GetProjectParticipantsRequest) {
+    return [...ProjectQueriesTags.root(), "getProjectParticipants", projectId, params] as const;
+  }
+}
+
+// entities/project/queries/use-get-participants.ts
+import { useQuery } from "@tanstack/react-query";
+import { ProjectQueriesTags } from "../keys";
+import { getProjectParticipants } from "../api/get-participants";
+
+export function useGetProjectParticipants(params: GetProjectParticipantsRequest) {
+  return useQuery({
+    queryFn: () => getProjectParticipants(params),
+    queryKey: ProjectQueriesTags.getProjectParticipants(params),
+    placeholderData: keepPreviousData,
+  });
+}
+```
+
+#### Other State:
 - Prefer local state (`useState`) for component-specific state
-- Use context for shared state within a feature/widget
-- Consider external state management (Zustand, Jotai) for global state
-- Keep business logic in `model/` segments
+- Use context for shared state within a feature
+- Consider Zustand/Jotai for global state
 
 ### Code Organization
 
